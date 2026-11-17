@@ -11,12 +11,6 @@ from typing import Any, cast
 
 from homeassistant.util import color as color_util
 
-from homeassistant.components.tuya.const import (
-    DPCode,
-    DPType,
-    WorkMode,
-)
-
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
@@ -33,7 +27,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import EntityCategory
 
-from .const import DOMAIN
+from .const import DOMAIN, DPCode, DPType, WorkMode
 from .base import IntegerTypeData
 from .util import remap_value
 from .devices import TuyaBLEData, TuyaBLEEntity, TuyaBLEProductInfo

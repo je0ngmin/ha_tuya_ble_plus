@@ -11,6 +11,17 @@ This integration supports Tuya devices locally connected via BLE.
 
 It includes support for **Fingerbot Touch** (product_id 'bs3ubslo') and is primarily maintained for use with Fingerbots.
 
+### Home Assistant compatibility
+
+Version 0.2.1 and later work on **Home Assistant 2026.11** (tested on 2026.11.1).
+Home Assistant removed the `DPType` constant from its built-in Tuya integration in 2026.11,
+so earlier versions of this integration failed to load with
+`cannot import name 'DPType' from 'homeassistant.components.tuya.const'`.
+`DPType`, `DPCode` and `WorkMode` are now defined inside `custom_components/tuya_ble_plus/const.py`,
+which makes the integration independent of Home Assistant's own Tuya component.
+
+Older Home Assistant versions work as well.
+
 ## Installation
 
 Place the `custom_components/tuya_ble_plus` folder in your Home Assistant configuration directory (or add its contents to an existing `custom_components` folder).

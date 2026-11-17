@@ -85,3 +85,22 @@ and this project adheres to [Semantic Versioning].
 
 - Connection to the device is postponed now. Previously some out of range device might prevents HA from fully booting.
 - Improved connection stability.
+
+## [0.2.1] - 2026-11-17
+
+### Fixed
+
+- Restored loading on Home Assistant 2026.11: `DPType` is no longer exported by
+  `homeassistant.components.tuya.const` since HA dropped it, which broke the whole
+  integration with `ImportError: cannot import name 'DPType'`.
+  `DPType`, `DPCode` and `WorkMode` are now defined by the integration itself in
+  `const.py` (same values as before, taken from HA 2026.11's own definitions), so the
+  integration no longer depends on private constants of HA's built-in Tuya component.
+- Replaced the deprecated `CONCENTRATION_PARTS_PER_MILLION` constant with
+  `UnitOfRatio.PARTS_PER_MILLION` (the old one is scheduled for removal in HA 2027.8).
+
+### Changed
+
+- Removed the unused `tuya` integration dependency from `manifest.json`. It was only
+  needed for the constants imported from HA's Tuya component; the integration now only
+  depends on `bluetooth_adapters` (which brings in `bluetooth`).

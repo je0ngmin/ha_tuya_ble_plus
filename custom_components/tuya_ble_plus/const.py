@@ -34,6 +34,21 @@ TUYA_RESPONSE_RESULT: Final = "result"
 TUYA_RESPONSE_MSG: Final = "msg"
 TUYA_RESPONSE_SUCCESS: Final = "success"
 
+# Smart Life / Tuya Smart QR code login (same as Home Assistant's official Tuya
+# integration, backed by the tuya_sharing (tuya-device-sharing-sdk) library).
+CONF_USER_CODE: Final = "user_code"
+CONF_TOKEN_INFO: Final = "token_info"
+CONF_TERMINAL_ID: Final = "terminal_id"
+CONF_SHARING_DEVICE: Final = "sharing_device"
+TUYA_CLIENT_ID: Final = "HA_3y9q4ak7g4ephrvke"
+TUYA_SCHEMA: Final = "haauthorize"
+TUYA_RESPONSE_QR_CODE: Final = "qrcode"
+TUYA_QR_LOGIN_URL: Final = "tuyaSmart--qrLogin?token=%s"
+QR_FIELD: Final = "QR"
+LOGIN_METHOD_QR: Final = "qr"
+LOGIN_METHOD_IOT: Final = "iot"
+SHARING_TOKEN_KEYS: Final = ("t", "uid", "expire_time", "access_token", "refresh_token")
+
 TUYA_DOMAIN: Final = "tuya"
 
 SMARTLIFE_APP = "smartlife"

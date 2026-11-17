@@ -5,6 +5,7 @@
 This integration supports Tuya devices locally connected via BLE.
 
 **Tuya BLE Plus** is a fork of the original `ha_tuya_ble` integration with added features:
+- **Smart Life / Tuya Smart QR code login** - the same login as Home Assistant's official Tuya integration: no Tuya IoT Access ID/Secret, no password, just the user code of the app and a QR scan
 - **Manual MAC address entry** - Add devices by MAC address, bypassing Bluetooth auto-discovery
 - **Support for non-connectable devices** - Works with devices that advertise as non-connectable (like Fingerbot Touch)
 - **Can run alongside the original integration** - Different domain name (`tuya_ble_plus`) allows both integrations to coexist
@@ -13,12 +14,13 @@ It includes support for **Fingerbot Touch** (product_id 'bs3ubslo') and is prima
 
 ### Home Assistant compatibility
 
-Version 0.2.1 and later work on **Home Assistant 2026.11** (tested on 2026.11.1).
+Version 0.2.2 and later work on **Home Assistant 2026.11** (tested on 2026.11.1).
 Home Assistant removed the `DPType` constant from its built-in Tuya integration in 2026.11,
 so earlier versions of this integration failed to load with
 `cannot import name 'DPType' from 'homeassistant.components.tuya.const'`.
 `DPType`, `DPCode` and `WorkMode` are now defined inside `custom_components/tuya_ble_plus/const.py`,
 which makes the integration independent of Home Assistant's own Tuya component.
+The QR code login uses `tuya-device-sharing-sdk` (already bundled with Home Assistant 2026.11).
 
 Older Home Assistant versions work as well.
 
@@ -35,8 +37,34 @@ Place the `custom_components/tuya_ble_plus` folder in your Home Assistant config
 1. Go to **Settings** → **Devices & Services** → **+ Add Integration**
 2. Search for **"Tuya BLE Plus"**
 3. Choose one of:
-   - **Auto-discover devices** - Automatically find nearby Tuya BLE devices
-   - **Manual MAC address entry** - Enter the device MAC address manually (useful for devices that advertise as non-connectable)
+   - **Smart Life / Tuya Smart QR code login** (recommended) - the easiest way, see below
+   - **Auto-discover devices** - Automatically find nearby Tuya BLE devices, using a Tuya IoT platform account
+   - **Manual MAC address entry** - Enter the device MAC address manually (useful for devices that advertise as non-connectable), using a Tuya IoT platform account
+
+When Home Assistant discovers a Tuya BLE device over Bluetooth it asks for the same choice
+between the QR code login and the Tuya IoT platform account.
+
+### Smart Life / Tuya Smart QR code login
+
+This is the login flow of Home Assistant's official Tuya integration. It reads the device
+credentials (`uuid`, local key, product and DP information) straight from the Smart Life /
+Tuya Smart account, so no Tuya IoT Access ID or Access Secret is needed.
+
+1. In the Smart Life or Tuya Smart app open **Me** → **Settings** → **Account and Security**
+   → **User Code** and copy the code.
+2. In Home Assistant choose **Smart Life / Tuya Smart QR code login** and enter the user code.
+3. Scan the QR code that Home Assistant shows with the app (scan function on the home
+   screen) and confirm the login in the app, then press **Submit**.
+4. If the account has more than one device, pick the device you are adding.
+5. The Tuya cloud does not report the Bluetooth MAC address of a device, so tell Home
+   Assistant which Bluetooth device it is: pick it from the discovered devices or enter
+   the MAC address by hand.
+
+The QR code expires after a few minutes. If the app did not confirm in time, press
+**Submit** again to get a new QR code.
+
+To refresh the credentials of a device later (for example after repairing it in the app),
+open the integration entry's **Configure** dialog and choose the QR code login there as well.
 
 ### Finding Your Device's MAC Address
 
@@ -47,8 +75,14 @@ If your device doesn't appear in auto-discovery:
 
 ### Tuya Cloud Credentials
 
-The integration works locally, but requires device ID and encryption key from Tuya IoT cloud for initial setup.
-To obtain the credentials, please refer to the official Tuya integration [documentation](https://www.home-assistant.io/integrations/tuya/).
+The integration works locally, but requires the device ID and the encryption key (local key)
+from the Tuya cloud for the initial setup. There are two ways to get them:
+
+- **Smart Life / Tuya Smart QR code login** (recommended) - user code + QR scan, no Tuya IoT
+  platform project needed.
+- **Tuya IoT platform account** - Access ID, Access Secret and the account credentials of the
+  mobile app. To obtain those, please refer to the official Tuya integration
+  [documentation](https://www.home-assistant.io/integrations/tuya/).
 
 ## Bluetooth Proxy Requirements
 

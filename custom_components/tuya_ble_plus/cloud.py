@@ -20,6 +20,7 @@ from tuya_iot import (
     TuyaOpenAPI,
     AuthType,
 )
+from tuya_sharing import CustomerDevice, LoginControl, Manager
 
 from .tuya_ble import (
     AbstaractTuyaBLEDeviceManager,
@@ -36,19 +37,25 @@ from .const import (
     CONF_UUID,
     CONF_LOCAL_KEY,
     CONF_CATEGORY,
-    CONF_PRODUCT_ID,
     CONF_DEVICE_NAME,
+    CONF_PRODUCT_ID,
     CONF_PRODUCT_NAME,
     CONF_FUNCTIONS,
     CONF_STATUS_RANGE,
+    CONF_TERMINAL_ID,
+    CONF_TOKEN_INFO,
+    CONF_USER_CODE,
     DOMAIN,
+    SHARING_TOKEN_KEYS,
     TUYA_API_DEVICE_SPECIFICATION,
     TUYA_API_DEVICES_URL,
     TUYA_API_FACTORY_INFO_URL,
+    TUYA_CLIENT_ID,
     TUYA_DOMAIN,
     TUYA_FACTORY_INFO_MAC,
     TUYA_RESPONSE_RESULT,
     TUYA_RESPONSE_SUCCESS,
+    TUYA_SCHEMA,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -86,6 +93,147 @@ CONF_TUYA_DEVICE_KEYS = [
 _cache: dict[str, TuyaCloudCacheItem] = {}
 
 
+def normalize_mac(value: str | None) -> str | None:
+    """Return the MAC address in the AA:BB:CC:DD:EE:FF form, if it is one."""
+    if not value:
+        return None
+    clean = value.replace(":", "").replace("-", "").strip().upper()
+    if len(clean) != 12:
+        return None
+    return ":".join(clean[i : i + 2] for i in range(0, 12, 2))
+
+
+class TuyaSharingLogin:
+    """QR code login of the Smart Life / Tuya Smart account.
+
+    This is the same login flow that Home Assistant's official Tuya integration
+    uses: the user code of the mobile app is exchanged for a QR code, the app
+    scans it and the resulting token gives access to the account's devices
+    without a Tuya IoT Access ID / Secret.
+    """
+
+    def __init__(self) -> None:
+        self._login_control = LoginControl()
+
+    def request_qr_code(self, user_code: str) -> dict[str, Any]:
+        """Ask the cloud for a new QR code of the given user code."""
+        return self._login_control.qr_code(TUYA_CLIENT_ID, TUYA_SCHEMA, user_code)
+
+    def get_login_result(
+        self, qr_token: str, user_code: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Check whether the QR code was scanned in the app."""
+        return self._login_control.login_result(qr_token, TUYA_CLIENT_ID, user_code)
+
+
+def sharing_login_data(user_code: str, info: dict[str, Any]) -> dict[str, Any]:
+    """Build the login part of the config entry data from a QR login result."""
+    missing = [
+        key
+        for key in (*SHARING_TOKEN_KEYS, CONF_TERMINAL_ID, CONF_ENDPOINT)
+        if info.get(key) is None
+    ]
+    if missing:
+        raise KeyError(f"QR login result is missing {', '.join(missing)}")
+
+    return {
+        CONF_USER_CODE: user_code,
+        CONF_TOKEN_INFO: {key: info[key] for key in SHARING_TOKEN_KEYS},
+        CONF_TERMINAL_ID: info[CONF_TERMINAL_ID],
+        CONF_ENDPOINT: info[CONF_ENDPOINT],
+    }
+
+
+def fetch_sharing_devices(data: dict[str, Any]) -> list[CustomerDevice]:
+    """Read every device of the account from the sharing cloud (blocking)."""
+    manager = Manager(
+        TUYA_CLIENT_ID,
+        data[CONF_USER_CODE],
+        data[CONF_TERMINAL_ID],
+        data[CONF_ENDPOINT],
+        data[CONF_TOKEN_INFO],
+    )
+    manager.update_device_cache()
+    return list(manager.device_map.values())
+
+
+def _sharing_dp_ids(device: CustomerDevice) -> dict[str, int]:
+    """Map DP codes to DP ids using the local protocol description of the device.
+
+    The sharing SDK does not report the DP ids that the BLE protocol needs, but
+    for devices that support local control it reports the DP id of every DP
+    code in the local strategy, which is exactly that mapping.
+    """
+    result: dict[str, int] = {}
+    for dp_id, strategy in (getattr(device, "local_strategy", None) or {}).items():
+        if not isinstance(strategy, dict):
+            continue
+        code = strategy.get("status_code")
+        if not code:
+            continue
+        try:
+            result[str(code)] = int(dp_id)
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _sharing_datapoints(items: Any, dp_ids: dict[str, int]) -> list[dict[str, Any]]:
+    """Convert sharing SDK DP descriptions to the format used by the integration."""
+    result: list[dict[str, Any]] = []
+    for code, item in (items or {}).items():
+        dp_id = dp_ids.get(str(code))
+        dp_type = getattr(item, "type", None)
+        if dp_id is None or not dp_type:
+            continue
+        datapoint: dict[str, Any] = {
+            "code": str(code),
+            "dp_id": dp_id,
+            "type": dp_type,
+        }
+        values = getattr(item, "values", None)
+        if values:
+            datapoint["values"] = values
+        result.append(datapoint)
+    return result
+
+
+def sharing_device_credentials(device: CustomerDevice) -> dict[str, Any]:
+    """Build device credentials of the config entry from a sharing cloud device."""
+    dp_ids = _sharing_dp_ids(device)
+    credentials: dict[str, Any] = {
+        CONF_UUID: getattr(device, "uuid", None),
+        CONF_LOCAL_KEY: getattr(device, "local_key", None),
+        CONF_DEVICE_ID: getattr(device, "id", None),
+        CONF_CATEGORY: getattr(device, "category", None),
+        CONF_PRODUCT_ID: getattr(device, "product_id", None),
+        CONF_DEVICE_NAME: getattr(device, "name", None),
+        CONF_PRODUCT_NAME: getattr(device, "product_name", None),
+        # The sharing SDK does not report the model, an empty value keeps the
+        # stored credentials complete for the credential checks.
+        CONF_PRODUCT_MODEL: getattr(device, "model", None) or "",
+        CONF_FUNCTIONS: _sharing_datapoints(getattr(device, "function", None), dp_ids),
+        CONF_STATUS_RANGE: _sharing_datapoints(
+            getattr(device, "status_range", None), dp_ids
+        ),
+    }
+    return credentials
+
+
+def sharing_device_mac(device: CustomerDevice) -> str | None:
+    """MAC address of a sharing cloud device, when the cloud reports one."""
+    return normalize_mac(getattr(device, "mac", None))
+
+
+def sharing_device_label(device: CustomerDevice) -> str:
+    """Readable name of a sharing cloud device, for the device selection list."""
+    name = getattr(device, "name", None) or getattr(device, "id", "?")
+    product = getattr(device, "product_name", None) or getattr(device, "category", None)
+    if product and product != name:
+        return f"{name} ({product})"
+    return name
+
+
 class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
     """Cloud connected manager of the Tuya BLE devices credentials."""
 
@@ -93,6 +241,7 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
         assert hass is not None
         self._hass = hass
         self._data = data
+        self._sharing_credentials: dict[str, Any] | None = None
 
     @staticmethod
     def _is_login_success(response: dict[Any, Any]) -> bool:
@@ -117,11 +266,26 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                 return False
         return True
 
+    @staticmethod
+    def _has_sharing_login(data: dict[Any, Any]) -> bool:
+        """Whether the data holds a Smart Life / Tuya Smart QR code login."""
+        return (
+            data.get(CONF_USER_CODE) is not None
+            and data.get(CONF_TOKEN_INFO) is not None
+            and data.get(CONF_TERMINAL_ID) is not None
+            and data.get(CONF_ENDPOINT) is not None
+        )
+
     async def _login(self, data: dict[str, Any], add_to_cache: bool) -> dict[Any, Any]:
         """Login into Tuya cloud using credentials from data dictionary."""
         global _cache
 
         if len(data) == 0:
+            return {}
+
+        if self._has_sharing_login(data) and not data.get(CONF_ACCESS_ID):
+            # This entry was added with the Smart Life / Tuya Smart QR code
+            # login, it has no Tuya IoT platform credentials to log in with.
             return {}
 
         api = TuyaOpenAPI(
@@ -258,6 +422,8 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
 
         if not force_update and self._has_credentials(self._data):
             credentials = self._data.copy()
+        elif self._has_sharing_login(self._data):
+            credentials = await self._get_sharing_device_credentials(address, force_update)
         else:
             cache_key: str | None = None
             if self._has_login(self._data):
@@ -299,6 +465,52 @@ class HASSTuyaBLEDeviceManager(AbstaractTuyaBLEDeviceManager):
                 self._data.update(credentials)
 
         return result
+
+    async def _get_sharing_device_credentials(
+        self, address: str, force_update: bool
+    ) -> dict[str, Any] | None:
+        """Get credentials of the device from the Smart Life / Tuya Smart cloud.
+
+        The sharing cloud does not report the BLE MAC address of a device, so
+        the device is matched by the device id stored in the entry and, as a
+        fallback, by the only device of the account.
+        """
+        if not force_update and self._sharing_credentials is not None:
+            return self._sharing_credentials
+
+        try:
+            devices = await self._hass.async_add_executor_job(
+                fetch_sharing_devices, self._data
+            )
+        except Exception as err:  # noqa: BLE001 - cloud errors must not break setup
+            _LOGGER.error("Failed to read the devices of the Tuya cloud: %s", err)
+            return None
+
+        device: CustomerDevice | None = None
+        device_id = self._data.get(CONF_DEVICE_ID)
+        if device_id:
+            device = next(
+                (item for item in devices if getattr(item, "id", None) == device_id),
+                None,
+            )
+        if device is None:
+            device = next(
+                (
+                    item
+                    for item in devices
+                    if sharing_device_mac(item) == address.upper()
+                ),
+                None,
+            )
+        if device is None and len(devices) == 1:
+            device = devices[0]
+        if device is None:
+            _LOGGER.debug("Device %s was not found in the Tuya cloud", address)
+            return None
+
+        credentials = sharing_device_credentials(device)
+        self._sharing_credentials = credentials
+        return credentials
 
     @property
     def data(self) -> dict[str, Any]:

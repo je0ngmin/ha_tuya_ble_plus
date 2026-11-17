@@ -104,3 +104,33 @@ and this project adheres to [Semantic Versioning].
 - Removed the unused `tuya` integration dependency from `manifest.json`. It was only
   needed for the constants imported from HA's Tuya component; the integration now only
   depends on `bluetooth_adapters` (which brings in `bluetooth`).
+
+## [0.2.2] - 2026-11-17
+
+### Added
+
+- **Smart Life / Tuya Smart QR code login.** Devices can now be added with the same
+  login flow as Home Assistant's official Tuya integration: enter the user code of the
+  mobile app (Me > Settings > Account and Security > User Code), scan the QR code with
+  the app and the integration reads `uuid`, `local_key`, `device_id`, `product_id`,
+  `category`, `functions` and `status_range` from the cloud. No Tuya IoT Access ID,
+  Access Secret or account password is needed anymore.
+  - The QR code login is the first option of the add-device menu and is also offered
+    when a device is discovered over Bluetooth.
+  - Because the cloud account does not report the Bluetooth MAC address, the cloud
+    device is picked from the account's device list (picked automatically when the
+    account has only one device) and the BLE address is taken from a discovered device
+    or entered by hand.
+  - DP ids needed by the BLE protocol are taken from the device's local strategy of the
+    sharing SDK, so the cloud functions/status ranges work without the IoT platform API.
+  - The options flow can refresh the credentials of an existing entry with the QR code
+    login as well.
+- `translations/ko.json` with Korean config flow texts.
+
+### Changed
+
+- `manifest.json` now requires `tuya-device-sharing-sdk>=0.2.15` (0.2.15 is the version
+  Home Assistant 2026.11's official Tuya integration pins and ships, the lower bound keeps
+  a later Home Assistant from being downgraded) and declares the `tuya_sharing` logger.
+- The Tuya IoT platform login (Access ID / Secret + account) and the manual MAC address
+  entry are unchanged and still available as the other menu options.
